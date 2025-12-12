@@ -36,6 +36,15 @@ st.markdown("""
         color: #888;
         font-size: 1.2rem;
     }
+    .sheet-badge {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-weight: bold;
+        display: inline-block;
+        margin: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,6 +69,12 @@ if "clear_uploader" not in st.session_state:
 
 if "captured_frames" not in st.session_state:
     st.session_state.captured_frames = []
+
+if "excel_sheets" not in st.session_state:
+    st.session_state.excel_sheets = {}
+
+if "sheet_analyses" not in st.session_state:
+    st.session_state.sheet_analyses = {}
 
 # ----------------------------------------
 
@@ -118,12 +133,15 @@ For each frame, write:
 
 IMPORTANT: Write clear, simple descriptions for each frame that will go UNDER the screenshot in the document."""
 
-def get_inventory_prompt(analysis_type):
+def get_inventory_prompt(analysis_type, sheet_name=""):
     """Get AI prompt based on analysis type"""
     
+    sheet_context = f"\n**ANALYZING SHEET: {sheet_name}**\n" if sheet_name else ""
+    
     prompts = {
-        "stockout_risk": """
-Analyze this inventory data and identify:
+        "stockout_risk": f"""
+{sheet_context}
+Analyze this data and identify:
 
 1. **CRITICAL STOCKOUTS** (immediate action needed):
    - Products with low stock levels vs. sales velocity
@@ -149,8 +167,9 @@ For each at-risk item, provide:
 Format as a prioritized action list with clear sections.
 """,
         
-        "slow_movers": """
-Analyze this inventory data and identify:
+        "slow_movers": f"""
+{sheet_context}
+Analyze this data and identify:
 
 1. **EXCESS INVENTORY** (overstock items):
    - Products with very high days of inventory on hand
@@ -171,32 +190,32 @@ Analyze this inventory data and identify:
 Format as an actionable report with specific SKUs and financial impact.
 """,
         
-        "general_insights": """
-Analyze this inventory data and provide a comprehensive overview:
+        "general_insights": f"""
+{sheet_context}
+Analyze this data and provide a comprehensive overview:
 
-1. **INVENTORY HEALTH ASSESSMENT**:
-   - Overall stock status (healthy/concerning)
-   - Stock distribution across categories
-   - Balance between stock levels and sales velocity
+1. **DATA OVERVIEW**:
+   - What type of data is this (inventory, sales, financial, etc.)?
+   - Overall assessment of the data health
 
-2. **TOP PERFORMERS**:
-   - Best selling products (high velocity)
-   - Products with optimal turnover rates
+2. **KEY FINDINGS**:
+   - Most important insights from this data
+   - Notable patterns or trends
+   - Anomalies or outliers
 
-3. **PROBLEM AREAS**:
-   - Stockout risks
-   - Overstock situations
-   - Unusual patterns or anomalies
+3. **TOP PERFORMERS**:
+   - Best performing items/categories
+   - Items with optimal metrics
 
-4. **KEY RECOMMENDATIONS**:
-   - Priority actions for inventory optimization
-   - Products requiring immediate attention
-   - Strategic suggestions for better inventory management
+4. **PROBLEM AREAS**:
+   - Issues requiring attention
+   - Risks or concerns
+   - Unusual patterns
 
-5. **METRICS**:
-   - Total inventory value (if price data available)
-   - Average days of inventory
-   - Stock health by category
+5. **RECOMMENDATIONS**:
+   - Priority actions
+   - Strategic suggestions
+   - Specific items requiring attention
 
 Provide clear, business-focused insights with specific examples and actionable recommendations.
 """
@@ -204,18 +223,24 @@ Provide clear, business-focused insights with specific examples and actionable r
     
     return prompts.get(analysis_type, prompts["general_insights"])
 
-def analyze_inventory_data(file, analysis_type):
-    """Analyze CSV inventory data with Gemini AI"""
-    
-    # Read file
+def load_excel_sheets(file):
+    """Load all sheets from an Excel file"""
     try:
-        if file.name.endswith('.csv'):
-            df = pd.read_csv(file)
-        else:  # Excel
-            df = pd.read_excel(file)
+        # Read all sheets
+        excel_file = pd.ExcelFile(file)
+        sheet_names = excel_file.sheet_names
+        
+        sheets_dict = {}
+        for sheet_name in sheet_names:
+            df = pd.read_excel(file, sheet_name=sheet_name)
+            sheets_dict[sheet_name] = df
+        
+        return sheets_dict, None
     except Exception as e:
-        st.error(f"Error reading file: {str(e)}")
-        return None, None
+        return None, str(e)
+
+def analyze_sheet_data(df, sheet_name, analysis_type):
+    """Analyze a single sheet's data with Gemini AI"""
     
     # Get basic stats
     total_rows = len(df)
@@ -223,12 +248,15 @@ def analyze_inventory_data(file, analysis_type):
     
     # Create data summary
     data_summary = f"""
-INVENTORY DATA SUMMARY:
-- Total Products: {total_rows}
-- Data Columns: {', '.join(df.columns.tolist())}
+SHEET: {sheet_name}
 
-SAMPLE DATA (First 15 rows):
-{df.head(15).to_string()}
+DATA SUMMARY:
+- Total Rows: {total_rows}
+- Total Columns: {total_columns}
+- Column Names: {', '.join(df.columns.tolist())}
+
+SAMPLE DATA (First 20 rows):
+{df.head(20).to_string()}
 
 BASIC STATISTICS:
 {df.describe().to_string()}
@@ -238,13 +266,13 @@ DATA TYPES:
 """
     
     # Get the analysis prompt
-    base_prompt = get_inventory_prompt(analysis_type)
+    base_prompt = get_inventory_prompt(analysis_type, sheet_name)
     
     # Create full prompt for AI
     full_prompt = f"""
 {base_prompt}
 
-Here's the inventory data to analyze:
+Here's the data to analyze:
 
 {data_summary}
 
@@ -252,7 +280,7 @@ Provide actionable insights and recommendations in a clear, well-structured mark
 Use headers, bullet points, and clear sections for easy reading.
 """
     
-    return full_prompt, df
+    return full_prompt
 
 def extract_video_frames_with_save(video_path, num_frames=8):
     """Extract frames from video and save as temporary files"""
@@ -457,7 +485,7 @@ def create_clean_document_with_images(test_data, frame_files, video_duration=0, 
 
 # Header
 st.markdown('<p class="shakti-title">⚡ SHAKTI-GEMINI ⚡</p>', unsafe_allow_html=True)
-st.markdown('<p class="subtitle">AI-Powered Assistant for Unit Testing & Inventory Analysis</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">AI-Powered Assistant for Unit Testing & Data Analysis</p>', unsafe_allow_html=True)
 
 # Sidebar
 with st.sidebar:
@@ -478,7 +506,7 @@ with st.sidebar:
     
     analysis_mode = st.radio(
         "What do you want to analyze?",
-        ["📹 Video (Unit Testing)", "📊 CSV Data (Inventory Analysis)"],
+        ["📹 Video (Unit Testing)", "📊 Excel File (Data Analysis)"],
         key="analysis_mode"
     )
 
@@ -534,33 +562,50 @@ with st.sidebar:
         
         temperature = st.slider("🌡️ Detail Level:", 0.0, 1.0, 0.3)
 
-    else:  # CSV Data mode
-        st.subheader("📊 Upload Inventory Data")
+    else:  # Excel Data mode
+        st.subheader("📊 Upload Excel File")
         
         if st.session_state.clear_uploader:
             st.session_state.clear_uploader = False
             st.session_state.uploader_key += 1
 
         uploaded_file = st.file_uploader(
-            "Upload CSV or Excel file",
-            type=['csv', 'xlsx', 'xls'],
-            key=f"data_uploader_{st.session_state.uploader_key}",
-            help="Upload inventory data exported from your system"
+            "Upload Excel workbook (.xlsx or .xls)",
+            type=['xlsx', 'xls'],
+            key=f"excel_uploader_{st.session_state.uploader_key}",
+            help="Upload Excel file with one or more sheets"
         )
 
         if uploaded_file:
             st.success(f"✅ File uploaded: {uploaded_file.name}")
             st.caption(f"📁 Size: {uploaded_file.size / 1024:.1f} KB")
+            
+            # Load all sheets
+            with st.spinner("📖 Reading Excel sheets..."):
+                sheets_dict, error = load_excel_sheets(uploaded_file)
+            
+            if error:
+                st.error(f"❌ Error reading Excel file: {error}")
+                st.session_state.excel_sheets = {}
+            else:
+                st.session_state.excel_sheets = sheets_dict
+                
+                # Show sheet info
+                st.success(f"✅ Found {len(sheets_dict)} sheet(s)")
+                for sheet_name, df in sheets_dict.items():
+                    st.caption(f"📄 **{sheet_name}**: {len(df)} rows × {len(df.columns)} columns")
+        else:
+            st.session_state.excel_sheets = {}
 
         st.divider()
 
-        # Analysis type for inventory
-        st.subheader("🎛️ Analysis Type")
+        # Analysis type for data
+        st.subheader("🎛️ Analysis Settings")
         
-        inventory_analysis_type = st.selectbox(
-            "Select Analysis:",
+        data_analysis_type = st.selectbox(
+            "Select Analysis Type:",
             ["General Insights", "Stockout Risk", "Slow Movers"],
-            help="Choose the type of inventory analysis"
+            help="Choose the type of analysis to perform"
         )
         
         # Map to prompt keys
@@ -569,6 +614,21 @@ with st.sidebar:
             "Stockout Risk": "stockout_risk",
             "Slow Movers": "slow_movers"
         }
+        
+        # Option to analyze all sheets or select specific ones
+        if st.session_state.excel_sheets:
+            st.subheader("📋 Select Sheets to Analyze")
+            
+            analyze_all = st.checkbox("Analyze all sheets", value=True)
+            
+            if not analyze_all and st.session_state.excel_sheets:
+                selected_sheets = st.multiselect(
+                    "Choose sheets:",
+                    options=list(st.session_state.excel_sheets.keys()),
+                    default=list(st.session_state.excel_sheets.keys())
+                )
+            else:
+                selected_sheets = list(st.session_state.excel_sheets.keys())
 
     st.divider()
 
@@ -578,14 +638,16 @@ with st.sidebar:
         st.session_state.current_video_file = None
         st.session_state.unit_test_data = None
         st.session_state.captured_frames = []
+        st.session_state.excel_sheets = {}
+        st.session_state.sheet_analyses = {}
         st.rerun()
 
 # Main Area
 if uploaded_file or st.session_state.current_video_file:
     
     # Determine button text and action
-    if analysis_mode == "📊 CSV Data (Inventory Analysis)":
-        button_text = "📊 ANALYZE INVENTORY DATA"
+    if analysis_mode == "📊 Excel File (Data Analysis)":
+        button_text = "📊 ANALYZE EXCEL DATA"
         button_icon = "📊"
     else:
         button_text = "📝 GENERATE UNIT TEST DOCUMENT"
@@ -597,114 +659,176 @@ if uploaded_file or st.session_state.current_video_file:
             st.error("⚠️ API key not configured!")
             st.stop()
         
-        # Progress tracking
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
         try:
-            # CSV/Excel Analysis Path
-            if analysis_mode == "📊 CSV Data (Inventory Analysis)" and uploaded_file:
+            # Excel Analysis Path
+            if analysis_mode == "📊 Excel File (Data Analysis)" and st.session_state.excel_sheets:
                 
-                status_text.info("📊 Loading inventory data...")
-                progress_bar.progress(20)
+                # Get sheets to analyze
+                if 'selected_sheets' in locals():
+                    sheets_to_analyze = {k: v for k, v in st.session_state.excel_sheets.items() if k in selected_sheets}
+                else:
+                    sheets_to_analyze = st.session_state.excel_sheets
                 
-                # Get analysis type
-                selected_analysis = analysis_type_map[inventory_analysis_type]
-                
-                # Analyze the data
-                full_prompt, df = analyze_inventory_data(uploaded_file, selected_analysis)
-                
-                if full_prompt is None or df is None:
-                    st.error("❌ Error processing file. Please check the file format.")
-                    progress_bar.empty()
-                    status_text.empty()
+                if not sheets_to_analyze:
+                    st.warning("⚠️ No sheets selected for analysis!")
                     st.stop()
                 
-                status_text.info("🤖 Analyzing with Gemini AI...")
-                progress_bar.progress(40)
+                total_sheets = len(sheets_to_analyze)
                 
-                # Configure Gemini
+                # Progress tracking
+                overall_progress = st.progress(0)
+                status_text = st.empty()
+                
+                # Configure Gemini once
                 genai.configure(api_key=api_key)
                 model = genai.GenerativeModel("models/gemini-2.0-flash-exp")
                 
-                smart_rate_limit()
+                # Get analysis type
+                selected_analysis = analysis_type_map[data_analysis_type]
                 
-                # Get AI response
-                response = model.generate_content(
-                    full_prompt,
-                    generation_config={"temperature": 0.3},
-                )
+                # Store analyses
+                st.session_state.sheet_analyses = {}
                 
-                progress_bar.progress(80)
-                analysis_result = response.text
+                # Analyze each sheet
+                for idx, (sheet_name, df) in enumerate(sheets_to_analyze.items(), 1):
+                    
+                    status_text.info(f"📊 Analyzing Sheet {idx}/{total_sheets}: **{sheet_name}**...")
+                    overall_progress.progress(int((idx - 0.5) / total_sheets * 100))
+                    
+                    # Generate prompt for this sheet
+                    full_prompt = analyze_sheet_data(df, sheet_name, selected_analysis)
+                    
+                    smart_rate_limit()
+                    
+                    # Get AI response
+                    response = model.generate_content(
+                        full_prompt,
+                        generation_config={"temperature": 0.3},
+                    )
+                    
+                    # Store the analysis
+                    st.session_state.sheet_analyses[sheet_name] = {
+                        'analysis': response.text,
+                        'dataframe': df,
+                        'rows': len(df),
+                        'columns': len(df.columns)
+                    }
+                    
+                    overall_progress.progress(int(idx / total_sheets * 100))
                 
-                progress_bar.progress(100)
-                progress_bar.empty()
+                overall_progress.empty()
                 status_text.empty()
                 
                 # Display results
-                st.success("✅ Analysis Complete!")
+                st.success(f"✅ Analysis Complete! Analyzed {total_sheets} sheet(s)")
                 
-                # Show data info
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total Products", len(df))
-                with col2:
-                    st.metric("Data Columns", len(df.columns))
-                with col3:
-                    st.metric("Analysis Type", inventory_analysis_type)
+                # Summary metrics
+                st.markdown("### 📊 Workbook Summary")
+                cols = st.columns(4)
                 
-                # Show the data preview
-                with st.expander("📊 Data Preview (First 20 Rows)", expanded=False):
-                    st.dataframe(df.head(20), use_container_width=True)
-                    st.caption(f"Showing first 20 of {len(df)} total rows")
+                total_rows = sum(info['rows'] for info in st.session_state.sheet_analyses.values())
+                total_cols = sum(info['columns'] for info in st.session_state.sheet_analyses.values())
                 
-                # Show column info
-                with st.expander("📋 Column Information", expanded=False):
-                    col_info = pd.DataFrame({
-                        'Column': df.columns,
-                        'Data Type': df.dtypes.values,
-                        'Non-Null Count': df.count().values,
-                        'Null Count': df.isnull().sum().values
-                    })
-                    st.dataframe(col_info, use_container_width=True)
+                cols[0].metric("Total Sheets", total_sheets)
+                cols[1].metric("Total Rows", total_rows)
+                cols[2].metric("Analysis Type", data_analysis_type)
+                cols[3].metric("Generated", datetime.now().strftime("%H:%M"))
                 
                 st.divider()
                 
-                # Show AI insights
-                st.markdown("### 🎯 AI-Powered Insights")
-                st.markdown(analysis_result)
+                # Display each sheet's analysis
+                for sheet_name, sheet_info in st.session_state.sheet_analyses.items():
+                    
+                    # Sheet header with custom styling
+                    st.markdown(f'<div class="sheet-badge">📄 Sheet: {sheet_name}</div>', unsafe_allow_html=True)
+                    
+                    # Sheet metrics
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Rows", sheet_info['rows'])
+                    col2.metric("Columns", sheet_info['columns'])
+                    col3.metric("Columns", ", ".join(sheet_info['dataframe'].columns.tolist()[:3]) + "...")
+                    
+                    # Data preview
+                    with st.expander(f"📊 View Data - {sheet_name} (First 20 Rows)", expanded=False):
+                        st.dataframe(sheet_info['dataframe'].head(20), use_container_width=True)
+                    
+                    # AI Analysis
+                    st.markdown(f"### 🎯 AI Insights - {sheet_name}")
+                    st.markdown(sheet_info['analysis'])
+                    
+                    # Download options for this sheet
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Download analysis
+                        st.download_button(
+                            label=f"📥 Download Analysis - {sheet_name}",
+                            data=sheet_info['analysis'],
+                            file_name=f"Analysis_{sheet_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                            mime="text/plain",
+                            use_container_width=True,
+                            key=f"download_analysis_{sheet_name}"
+                        )
+                    
+                    with col2:
+                        # Download data
+                        csv_data = sheet_info['dataframe'].to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label=f"📥 Download Data - {sheet_name}",
+                            data=csv_data,
+                            file_name=f"Data_{sheet_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv",
+                            use_container_width=True,
+                            key=f"download_data_{sheet_name}"
+                        )
+                    
+                    st.divider()
                 
-                st.divider()
+                # Download combined report
+                st.markdown("### 📥 Download Combined Report")
                 
-                # Download buttons
-                col1, col2 = st.columns(2)
+                combined_report = f"""
+# EXCEL WORKBOOK ANALYSIS REPORT
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Analysis Type: {data_analysis_type}
+Total Sheets Analyzed: {total_sheets}
+
+---
+
+"""
+                for sheet_name, sheet_info in st.session_state.sheet_analyses.items():
+                    combined_report += f"""
+## 📄 SHEET: {sheet_name}
+
+**Data Summary:**
+- Rows: {sheet_info['rows']}
+- Columns: {sheet_info['columns']}
+- Column Names: {', '.join(sheet_info['dataframe'].columns.tolist())}
+
+**AI Analysis:**
+
+{sheet_info['analysis']}
+
+{'=' * 80}
+
+"""
                 
-                with col1:
-                    # Download analysis report
-                    st.download_button(
-                        label="📥 Download Analysis Report (TXT)",
-                        data=analysis_result,
-                        file_name=f"Inventory_Analysis_{inventory_analysis_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                        mime="text/plain",
-                        use_container_width=True
-                    )
-                
-                with col2:
-                    # Download CSV data
-                    csv_data = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Data (CSV)",
-                        data=csv_data,
-                        file_name=f"Inventory_Data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
+                st.download_button(
+                    label="📥 Download Complete Report (All Sheets)",
+                    data=combined_report,
+                    file_name=f"Complete_Analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
                 
                 st.balloons()
             
             # Video Analysis Path (Original functionality)
             elif analysis_mode == "📹 Video (Unit Testing)" and st.session_state.current_video_file:
+                
+                # Progress tracking
+                progress_bar = st.progress(0)
+                status_text = st.empty()
                 
                 # Step 1: Extract frames
                 status_text.info(f"📸 Capturing {num_screenshots} screenshots...")
@@ -775,12 +899,8 @@ if uploaded_file or st.session_state.current_video_file:
             
             else:
                 st.warning("⚠️ Please upload a file first!")
-                progress_bar.empty()
-                status_text.empty()
             
         except Exception as e:
-            progress_bar.empty()
-            status_text.empty()
             st.error(f"❌ Error: {str(e)}")
             st.exception(e)
 
@@ -812,72 +932,86 @@ else:
         4. Download your clean document!
         """)
     
-    else:  # CSV mode
-        st.info("👈 Upload a CSV or Excel file with inventory data to begin")
+    else:  # Excel mode
+        st.info("👈 Upload an Excel file to begin multi-sheet analysis")
         
         st.markdown("""
-        ### ✨ Inventory Analysis Features:
+        ### ✨ Excel Multi-Sheet Analysis Features:
         
-        **📊 Three Analysis Types:**
+        **📊 Complete Workbook Analysis:**
+        - Analyzes ALL sheets in your Excel file automatically
+        - Each sheet gets its own dedicated AI analysis
+        - Compare data across multiple sheets
+        - Perfect for complex workbooks with multiple data sets
+        
+        **🎯 Three Analysis Types:**
         
         **1. General Insights**
-        - Overall inventory health assessment
-        - Top performers and problem areas
-        - Stock distribution analysis
+        - Comprehensive overview of each sheet
+        - Identifies data patterns and trends
+        - Highlights key findings
         - Strategic recommendations
         
-        **2. Stockout Risk**
-        - Identify products at risk of running out
-        - Estimated stockout dates
-        - Recommended reorder quantities
-        - Revenue impact analysis
+        **2. Stockout Risk Analysis**
+        - Identifies products at risk per sheet
+        - Calculates stockout dates
+        - Recommends reorder quantities
+        - Revenue impact assessment
         
-        **3. Slow Movers**
-        - Detect excess inventory
-        - Products with low turnover
+        **3. Slow Movers Detection**
+        - Finds excess inventory per sheet
         - Clearance recommendations
-        - Potential cost savings
+        - Cost savings analysis
+        - Turnover optimization
         
         ### 📖 How to use:
-        1. Export inventory data from your system as CSV/Excel
-        2. Upload the file here
-        3. Select analysis type
-        4. Click analyze
-        5. Get AI-powered insights instantly!
+        1. Upload your Excel workbook (.xlsx or .xls)
+        2. App automatically detects all sheets
+        3. Choose analysis type
+        4. Select which sheets to analyze (or analyze all)
+        5. Click analyze
+        6. Get separate AI insights for EACH sheet!
+        7. Download individual or combined reports
         
-        ### 📋 Recommended CSV Columns:
-        - SKU or Product ID
-        - Product Name
-        - Current Stock/Quantity
-        - Sales data (last 30/60/90 days)
-        - Category
-        - Price (optional)
-        - Last sale date (optional)
+        ### 📋 Example Use Cases:
+        - **Multi-location inventory**: Each sheet = different warehouse
+        - **Product categories**: Each sheet = different category
+        - **Time periods**: Each sheet = different month/quarter
+        - **Departments**: Each sheet = different department data
+        - **Suppliers**: Each sheet = different vendor data
+        
+        ### 💡 Pro Tips:
+        - Name your sheets descriptively (e.g., "Warehouse_East", "Q4_2024")
+        - Keep consistent column names across sheets for better analysis
+        - Each sheet will be analyzed separately with full AI insights
+        - You can compare insights across sheets easily
         """)
         
-        # Sample CSV template
-        with st.expander("📥 Download Sample CSV Template", expanded=False):
-            sample_data = {
-                'SKU': ['SOF001', 'TAB001', 'BED001', 'CHA001'],
-                'Product_Name': ['Madison Sofa', 'Oak Dining Table', 'Queen Platform Bed', 'Accent Chair'],
-                'Category': ['Sofas', 'Tables', 'Beds', 'Chairs'],
-                'Current_Stock': [5, 3, 8, 50],
-                'Sales_Last_30_Days': [45, 12, 20, 5],
-                'Unit_Price': [1299, 599, 899, 199],
-                'Last_Sale_Date': ['2025-12-01', '2025-12-03', '2025-12-04', '2025-09-10']
-            }
-            sample_df = pd.DataFrame(sample_data)
+        # Sample Excel template info
+        with st.expander("📥 Sample Excel Structure", expanded=False):
+            st.markdown("""
+            **Example Multi-Sheet Excel Structure:**
             
-            st.dataframe(sample_df, use_container_width=True)
+            **Sheet 1: Warehouse_North**
+            | SKU | Product | Stock | Sales_30d | Category |
+            |-----|---------|-------|-----------|----------|
+            | SOF001 | Sofa A | 50 | 45 | Sofas |
+            | TAB001 | Table B | 30 | 12 | Tables |
             
-            csv_sample = sample_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Sample Template",
-                data=csv_sample,
-                file_name="inventory_sample_template.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+            **Sheet 2: Warehouse_South**
+            | SKU | Product | Stock | Sales_30d | Category |
+            |-----|---------|-------|-----------|----------|
+            | SOF001 | Sofa A | 15 | 60 | Sofas |
+            | BED001 | Bed C | 8 | 20 | Beds |
+            
+            **Sheet 3: Warehouse_West**
+            | SKU | Product | Stock | Sales_30d | Category |
+            |-----|---------|-------|-----------|----------|
+            | CHA001 | Chair D | 100 | 5 | Chairs |
+            | TAB002 | Table E | 25 | 18 | Tables |
+            
+            Each sheet will get its own detailed analysis!
+            """)
 
 st.divider()
-st.caption(f"⚡ Shakti-Gemini AI Assistant | Powered by Google Gemini | {datetime.now().strftime('%I:%M %p')}")
+st.caption(f"⚡ Shakti-Gemini AI Assistant | Multi-Sheet Excel Analysis | {datetime.now().strfti
