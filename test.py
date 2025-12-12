@@ -771,7 +771,7 @@ if uploaded_file or st.session_state.current_video_file:
                 
                 # Configure Gemini once
                 genai.configure(api_key=api_key)
-                model = genai.GenerativeModel("models/gemini-1.5-flash")
+                model = genai.GenerativeModel("models/gemini-2.5-flash")
                 
                 # Get analysis type
                 selected_analysis = analysis_type_map[data_analysis_type]
