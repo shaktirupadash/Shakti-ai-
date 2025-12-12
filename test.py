@@ -85,12 +85,6 @@ if "analysis_type_used" not in st.session_state:
 if "total_sheets_analyzed" not in st.session_state:
     st.session_state.total_sheets_analyzed = 0
 
-if "video_analysis_complete" not in st.session_state:
-    st.session_state.video_analysis_complete = False
-
-if "video_doc_bytes" not in st.session_state:
-    st.session_state.video_doc_bytes = None
-
 # ----------------------------------------
 
 def create_sample_excel():
@@ -577,4 +571,560 @@ def create_clean_document_with_images(test_data, frame_files, video_duration=0, 
 st.markdown('<p class="shakti-title">⚡ SHAKTI-GEMINI ⚡</p>', unsafe_allow_html=True)
 st.markdown('<p class="subtitle">AI-Powered Assistant for Unit Testing & Data Analysis</p>', unsafe_allow_html=True)
 
-#
+# Sidebar
+with st.sidebar:
+    st.title("⚙️ Control Center")
+
+    # Get API Key from Streamlit Secrets
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+        st.success("✅ AI Ready!")
+    except:
+        st.error("⚠️ API key not configured. Contact admin.")
+        api_key = None
+
+    st.divider()
+
+    # Choose Analysis Type
+    st.subheader("🎯 Select Mode")
+    
+    analysis_mode = st.radio(
+        "What do you want to analyze?",
+        ["📹 Video (Unit Testing)", "📊 Excel File (Data Analysis)"],
+        key="analysis_mode"
+    )
+
+    st.divider()
+
+    # File Upload based on mode
+    if analysis_mode == "📹 Video (Unit Testing)":
+        st.subheader("🎥 Upload Test Video")
+        
+        if st.session_state.clear_uploader:
+            st.session_state.clear_uploader = False
+            st.session_state.uploader_key += 1
+
+        uploaded_file = st.file_uploader(
+            "Upload test execution video",
+            type=['mp4', 'mov', 'avi', 'mkv', 'webm'],
+            key=f"video_uploader_{st.session_state.uploader_key}",
+        )
+
+        if uploaded_file:
+            st.video(uploaded_file)
+            
+            tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            tfile.write(uploaded_file.read())
+            video_path = tfile.name
+            
+            cap = cv2.VideoCapture(video_path)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = frame_count / fps if fps > 0 else 0
+            cap.release()
+            
+            st.caption(f"⏱️ {duration:.1f}s | 🎞️ {fps:.0f} FPS")
+            
+            st.session_state.current_video_file = video_path
+            st.session_state.video_duration = duration
+            st.session_state.video_name = uploaded_file.name
+        else:
+            st.session_state.current_video_file = None
+
+        st.divider()
+
+        # Settings for video
+        st.subheader("🎛️ Settings")
+        
+        num_screenshots = st.slider(
+            "📸 Number of Screenshots:",
+            min_value=4,
+            max_value=12,
+            value=8,
+            help="Number of test steps to capture"
+        )
+        
+        temperature = st.slider("🌡️ Detail Level:", 0.0, 1.0, 0.3)
+
+    else:  # Excel Data mode
+        st.subheader("📊 Upload Excel File")
+        
+        # Sample Excel download button
+        sample_excel = create_sample_excel()
+        st.download_button(
+            label="📥 Download Sample Excel Template",
+            data=sample_excel,
+            file_name="Ashley_Inventory_Sample.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            help="Download a pre-filled sample Excel with 4 sheets to test the app"
+        )
+        
+        st.caption("💡 Download the sample, test it, then replace with your data!")
+        
+        st.divider()
+        
+        if st.session_state.clear_uploader:
+            st.session_state.clear_uploader = False
+            st.session_state.uploader_key += 1
+
+        uploaded_file = st.file_uploader(
+            "Upload Excel workbook (.xlsx or .xls)",
+            type=['xlsx', 'xls'],
+            key=f"excel_uploader_{st.session_state.uploader_key}",
+            help="Upload Excel file with one or more sheets"
+        )
+
+        if uploaded_file:
+            st.success(f"✅ File uploaded: {uploaded_file.name}")
+            st.caption(f"📁 Size: {uploaded_file.size / 1024:.1f} KB")
+            
+            # Load all sheets
+            with st.spinner("📖 Reading Excel sheets..."):
+                sheets_dict, error = load_excel_sheets(uploaded_file)
+            
+            if error:
+                st.error(f"❌ Error reading Excel file: {error}")
+                st.session_state.excel_sheets = {}
+            else:
+                st.session_state.excel_sheets = sheets_dict
+                
+                # Show sheet info
+                st.success(f"✅ Found {len(sheets_dict)} sheet(s)")
+                for sheet_name, df in sheets_dict.items():
+                    st.caption(f"📄 **{sheet_name}**: {len(df)} rows × {len(df.columns)} columns")
+        else:
+            st.session_state.excel_sheets = {}
+
+        st.divider()
+
+        # Analysis type for data
+        st.subheader("🎛️ Analysis Settings")
+        
+        data_analysis_type = st.selectbox(
+            "Select Analysis Type:",
+            ["General Insights", "Stockout Risk", "Slow Movers"],
+            help="Choose the type of analysis to perform"
+        )
+        
+        # Map to prompt keys
+        analysis_type_map = {
+            "General Insights": "general_insights",
+            "Stockout Risk": "stockout_risk",
+            "Slow Movers": "slow_movers"
+        }
+        
+        # Option to analyze all sheets or select specific ones
+        if st.session_state.excel_sheets:
+            st.subheader("📋 Select Sheets to Analyze")
+            
+            analyze_all = st.checkbox("Analyze all sheets", value=True)
+            
+            if not analyze_all and st.session_state.excel_sheets:
+                selected_sheets = st.multiselect(
+                    "Choose sheets:",
+                    options=list(st.session_state.excel_sheets.keys()),
+                    default=list(st.session_state.excel_sheets.keys())
+                )
+            else:
+                selected_sheets = list(st.session_state.excel_sheets.keys())
+
+    st.divider()
+
+    if st.button("🗑️ Clear All", use_container_width=True):
+        st.session_state.messages = []
+        st.session_state.clear_uploader = True
+        st.session_state.current_video_file = None
+        st.session_state.unit_test_data = None
+        st.session_state.captured_frames = []
+        st.session_state.excel_sheets = {}
+        st.session_state.sheet_analyses = {}
+        st.session_state.analysis_complete = False
+        st.rerun()
+
+# Main Area
+if uploaded_file or st.session_state.current_video_file:
+    
+    # Determine button text and action
+    if analysis_mode == "📊 Excel File (Data Analysis)":
+        button_text = "📊 ANALYZE EXCEL DATA"
+        button_icon = "📊"
+    else:
+        button_text = "📝 GENERATE UNIT TEST DOCUMENT"
+        button_icon = "📝"
+    
+    if st.button(button_text, type="primary", use_container_width=True):
+        
+        if not api_key:
+            st.error("⚠️ API key not configured!")
+            st.stop()
+        
+        try:
+            # Excel Analysis Path
+            if analysis_mode == "📊 Excel File (Data Analysis)" and st.session_state.excel_sheets:
+                
+                # Get sheets to analyze
+                if 'selected_sheets' in locals():
+                    sheets_to_analyze = {k: v for k, v in st.session_state.excel_sheets.items() if k in selected_sheets}
+                else:
+                    sheets_to_analyze = st.session_state.excel_sheets
+                
+                if not sheets_to_analyze:
+                    st.warning("⚠️ No sheets selected for analysis!")
+                    st.stop()
+                
+                total_sheets = len(sheets_to_analyze)
+                
+                # Progress tracking
+                overall_progress = st.progress(0)
+                status_text = st.empty()
+                
+                # Configure Gemini once
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel("models/gemini-2.5-flash")
+                
+                # Get analysis type
+                selected_analysis = analysis_type_map[data_analysis_type]
+                
+                # Store analyses in session state
+                st.session_state.sheet_analyses = {}
+                
+                # Analyze each sheet
+                for idx, (sheet_name, df) in enumerate(sheets_to_analyze.items(), 1):
+                    
+                    status_text.info(f"📊 Analyzing Sheet {idx}/{total_sheets}: **{sheet_name}**...")
+                    overall_progress.progress(int((idx - 0.5) / total_sheets * 100))
+                    
+                    # Generate prompt for this sheet
+                    full_prompt = analyze_sheet_data(df, sheet_name, selected_analysis)
+                    
+                    smart_rate_limit()
+                    
+                    # Get AI response
+                    response = model.generate_content(
+                        full_prompt,
+                        generation_config={"temperature": 0.3},
+                    )
+                    
+                    # Store the analysis in session state
+                    st.session_state.sheet_analyses[sheet_name] = {
+                        'analysis': response.text,
+                        'dataframe': df,
+                        'rows': len(df),
+                        'columns': len(df.columns)
+                    }
+                    
+                    overall_progress.progress(int(idx / total_sheets * 100))
+                
+                # Mark analysis as complete and store metadata
+                st.session_state.analysis_complete = True
+                st.session_state.analysis_type_used = data_analysis_type
+                st.session_state.total_sheets_analyzed = total_sheets
+                
+                overall_progress.empty()
+                status_text.empty()
+                
+                st.success("✅ Analysis complete! Results displayed below.")
+                st.rerun()
+            
+            # Video Analysis Path (Original functionality)
+            elif analysis_mode == "📹 Video (Unit Testing)" and st.session_state.current_video_file:
+                
+                # Progress tracking
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                # Step 1: Extract frames
+                status_text.info(f"📸 Capturing {num_screenshots} screenshots...")
+                progress_bar.progress(10)
+                
+                frames, frame_files = extract_video_frames_with_save(
+                    st.session_state.current_video_file, 
+                    num_screenshots
+                )
+                st.session_state.captured_frames = frame_files
+                
+                progress_bar.progress(30)
+                
+                # Step 2: AI Analysis
+                status_text.info("🤖 Analyzing video with Gemini AI...")
+                progress_bar.progress(40)
+                
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel("models/gemini-2.5-flash")
+                
+                prompt = generate_unit_test_prompt()
+                
+                smart_rate_limit()
+                
+                # Use frames for faster analysis
+                response = model.generate_content(
+                    [prompt] + frames,
+                    generation_config={"temperature": temperature},
+                )
+                
+                progress_bar.progress(70)
+                test_data = response.text
+                st.session_state.unit_test_data = test_data
+                
+                # Step 3: Create document
+                status_text.info("📝 Creating clean document...")
+                progress_bar.progress(85)
+                
+                doc_bytes = create_clean_document_with_images(
+                    test_data,
+                    frame_files,
+                    st.session_state.video_duration,
+                    st.session_state.video_name
+                )
+                
+                progress_bar.progress(100)
+                progress_bar.empty()
+                status_text.empty()
+                
+                st.success("✅ Clean Unit Test Document Generated!")
+                
+                # Preview
+                with st.expander("👀 Preview Screenshots", expanded=False):
+                    cols = st.columns(3)
+                    for i, frame in enumerate(frames[:6]):
+                        cols[i % 3].image(frame, caption=f"Step {i+1}", use_column_width=True)
+                
+                # Download
+                st.download_button(
+                    label="📥 DOWNLOAD UNIT TEST DOCUMENT (.docx)",
+                    data=doc_bytes,
+                    file_name=f"Unit_Test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+                
+                st.balloons()
+            
+            else:
+                st.warning("⚠️ Please upload a file first!")
+            
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+            st.exception(e)
+
+# Display Excel analysis results (persists after download clicks)
+if st.session_state.get('analysis_complete', False) and st.session_state.sheet_analyses:
+    
+    st.divider()
+    st.markdown("## 📊 Analysis Results")
+    
+    # Summary metrics
+    st.markdown("### 📊 Workbook Summary")
+    cols = st.columns(4)
+    
+    total_rows = sum(info['rows'] for info in st.session_state.sheet_analyses.values())
+    
+    cols[0].metric("Total Sheets", st.session_state.total_sheets_analyzed)
+    cols[1].metric("Total Rows", total_rows)
+    cols[2].metric("Analysis Type", st.session_state.analysis_type_used)
+    cols[3].metric("Generated", datetime.now().strftime("%H:%M"))
+    
+    st.divider()
+    
+    # Display each sheet's analysis
+    for sheet_name, sheet_info in st.session_state.sheet_analyses.items():
+        
+        # Sheet header with custom styling
+        st.markdown(f'<div class="sheet-badge">📄 Sheet: {sheet_name}</div>', unsafe_allow_html=True)
+        
+        # Sheet metrics
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Rows", sheet_info['rows'])
+        col2.metric("Columns", sheet_info['columns'])
+        col3.metric("Columns", ", ".join(sheet_info['dataframe'].columns.tolist()[:3]) + "...")
+        
+        # Data preview
+        with st.expander(f"📊 View Data - {sheet_name} (First 20 Rows)", expanded=False):
+            st.dataframe(sheet_info['dataframe'].head(20), use_container_width=True)
+        
+        # AI Analysis
+        st.markdown(f"### 🎯 AI Insights - {sheet_name}")
+        st.markdown(sheet_info['analysis'])
+        
+        # Download options for this sheet
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Download analysis
+            st.download_button(
+                label=f"📥 Download Analysis - {sheet_name}",
+                data=sheet_info['analysis'],
+                file_name=f"Analysis_{sheet_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain",
+                use_container_width=True,
+                key=f"download_analysis_{sheet_name}"
+            )
+        
+        with col2:
+            # Download data
+            csv_data = sheet_info['dataframe'].to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"📥 Download Data - {sheet_name}",
+                data=csv_data,
+                file_name=f"Data_{sheet_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key=f"download_data_{sheet_name}"
+            )
+        
+        st.divider()
+    
+    # Download combined report
+    st.markdown("### 📥 Download Combined Report")
+    
+    combined_report = f"""
+# EXCEL WORKBOOK ANALYSIS REPORT
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Analysis Type: {st.session_state.analysis_type_used}
+Total Sheets Analyzed: {st.session_state.total_sheets_analyzed}
+
+---
+
+"""
+    for sheet_name, sheet_info in st.session_state.sheet_analyses.items():
+        combined_report += f"""
+## 📄 SHEET: {sheet_name}
+
+**Data Summary:**
+- Rows: {sheet_info['rows']}
+- Columns: {sheet_info['columns']}
+- Column Names: {', '.join(sheet_info['dataframe'].columns.tolist())}
+
+**AI Analysis:**
+
+{sheet_info['analysis']}
+
+{'=' * 80}
+
+"""
+    
+    st.download_button(
+        label="📥 Download Complete Report (All Sheets)",
+        data=combined_report,
+        file_name=f"Complete_Analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+        mime="text/plain",
+        use_container_width=True
+    )
+    
+    # Add button to start new analysis
+    st.divider()
+    if st.button("🔄 Analyze New File", use_container_width=True):
+        st.session_state.analysis_complete = False
+        st.session_state.sheet_analyses = {}
+        st.session_state.excel_sheets = {}
+        st.rerun()
+
+# Welcome screen (only show if no results to display)
+if not st.session_state.get('analysis_complete', False):
+    if not (uploaded_file or st.session_state.current_video_file):
+        # Welcome screen
+        if analysis_mode == "📹 Video (Unit Testing)":
+            st.info("👈 Upload a test execution video to begin")
+            
+            st.markdown("""
+            ### ✨ Unit Test Generator Features:
+            
+            **📸 Large, Readable Screenshots**
+            - 6-inch wide screenshots for clarity
+            - Clear visibility of all UI elements
+            
+            **📝 Description Under Each Screenshot**
+            - AI-generated description of what's happening
+            - Centered, italicized text for clean look
+            
+            **🎯 Clean Document Layout**
+            - Professional formatting
+            - Easy to read and understand
+            - Perfect for documentation and reports
+            
+            ### 📖 How to use:
+            1. Upload your test execution video
+            2. Choose number of steps (4-12)
+            3. Click generate
+            4. Download your clean document!
+            """)
+        
+        else:  # Excel mode
+            st.info("👈 Download the sample Excel template to get started!")
+            
+            st.markdown("""
+            ### ✨ Excel Multi-Sheet Analysis Features:
+            
+            **📊 Pre-Built Sample Template:**
+            - Click "Download Sample Excel Template" in the sidebar
+            - Ready-to-use Excel file with 4 sheets:
+              - **Warehouse_North**: 10 products with inventory data
+              - **Warehouse_South**: 10 different products
+              - **Warehouse_West**: 10 outdoor & office items
+              - **Sales_Summary_2024**: Monthly sales metrics
+            - Real furniture data (Sofas, Tables, Beds, Chairs, etc.)
+            - Test the app immediately with sample data!
+            
+            **🎯 How to Use Sample Template:**
+            
+            **Step 1: Download & Test**
+            1. Click "📥 Download Sample Excel Template" 
+            2. Upload it back to test the app
+            3. See AI analyze all 4 sheets!
+            
+            **Step 2: Customize for Your Data**
+            1. Open downloaded Excel in Microsoft Excel/Google Sheets
+            2. Replace sample data with YOUR Ashley data
+            3. Keep the same column structure (or adjust columns as needed)
+            4. Save and upload
+            5. Get insights on YOUR actual inventory!
+            
+            **📋 What's in the Sample:**
+            
+            **Sheet 1-3: Warehouse Inventory**
+            - SKU, Product Name, Category
+            - Current Stock levels
+            - Sales in last 30 days
+            - Unit Price, Supplier
+            - Last Sale Date
+            
+            **Sheet 4: Sales Summary**
+            - Monthly data (Jan-Dec 2024)
+            - Total Sales, Units Sold
+            - Average Order Value
+            - New Customers, Return Rate
+            
+            ### 🎯 Three Analysis Types:
+            
+            **1. General Insights** - Best for sales data
+            - Overview of performance
+            - Trends and patterns
+            - Top/bottom performers
+            
+            **2. Stockout Risk** - Best for inventory data
+            - Products running low
+            - Reorder recommendations
+            - Revenue at risk
+            
+            **3. Slow Movers** - Best for inventory data
+            - Overstock items
+            - Clearance suggestions
+            - Cost savings opportunities
+            
+            ### 💡 Pro Tips:
+            - **Test with sample first** to see how it works
+            - **Then replace with your data** keeping similar structure
+            - Each sheet analyzed separately with full AI insights
+            - Perfect for multi-location or multi-category analysis
+            
+            ### 🚀 Quick Start (3 minutes):
+            1. Click "Download Sample Excel Template" (sidebar)
+            2. Upload it back
+            3. Select "General Insights"
+            4. Click "Analyze"
+            5. See AI magic happen! ✨
+            """)
+
+st.divider()
+st.caption(f"⚡ Shakti-Gemini AI Assistant | Multi-Sheet Excel Analysis | {datetime.now().strftime('%I:%M %p')}")
