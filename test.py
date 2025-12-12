@@ -1014,4 +1014,4 @@ else:
             """)
 
 st.divider()
-st.caption(f"⚡ Shakti-Gemini AI Assistant | Multi-Sheet Excel Analysis | {datetime.now().strfti
+st.caption(f"⚡ Shakti-Gemini AI Assistant | Multi-Sheet Excel Analysis | {datetime.now().strftime('%I:%M %p')}")
