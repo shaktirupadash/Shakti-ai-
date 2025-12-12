@@ -3,3 +3,5 @@ google-generativeai
 Pillow
 opencv-python-headless
 python-docx
+pandas
+openpyxl
