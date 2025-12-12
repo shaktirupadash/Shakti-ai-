@@ -78,6 +78,81 @@ if "sheet_analyses" not in st.session_state:
 
 # ----------------------------------------
 
+def create_sample_excel():
+    """Create a sample Excel file with multiple sheets for download"""
+    
+    # Create Excel writer object
+    output = io.BytesIO()
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        
+        # Sheet 1: Warehouse North
+        warehouse_north = pd.DataFrame({
+            'SKU': ['SOF001', 'SOF002', 'TAB001', 'TAB002', 'BED001', 'BED002', 'CHA001', 'CHA002', 'LAM001', 'LAM002'],
+            'Product_Name': ['Madison Sofa', 'Parker Sectional', 'Oak Dining Table', 'Glass Coffee Table', 
+                           'Queen Platform Bed', 'King Storage Bed', 'Accent Chair', 'Office Chair', 
+                           'Table Lamp', 'Floor Lamp'],
+            'Category': ['Sofas', 'Sofas', 'Tables', 'Tables', 'Beds', 'Beds', 'Chairs', 'Chairs', 'Lighting', 'Lighting'],
+            'Current_Stock': [5, 15, 3, 25, 8, 2, 50, 12, 100, 15],
+            'Sales_Last_30_Days': [45, 8, 12, 2, 20, 35, 5, 18, 10, 15],
+            'Unit_Price': [1299, 1899, 599, 299, 899, 1199, 199, 399, 49, 129],
+            'Supplier': ['Supplier_A', 'Supplier_A', 'Supplier_B', 'Supplier_C', 'Supplier_B', 'Supplier_B', 
+                        'Supplier_C', 'Supplier_C', 'Supplier_D', 'Supplier_D'],
+            'Last_Sale_Date': ['2025-12-01', '2025-11-20', '2025-12-03', '2025-10-15', '2025-12-04', 
+                             '2025-12-05', '2025-09-10', '2025-12-02', '2025-11-28', '2025-12-01']
+        })
+        warehouse_north.to_excel(writer, sheet_name='Warehouse_North', index=False)
+        
+        # Sheet 2: Warehouse South
+        warehouse_south = pd.DataFrame({
+            'SKU': ['SOF001', 'SOF003', 'TAB001', 'BED001', 'BED003', 'CHA001', 'CHA003', 'RUG001', 'RUG002', 'DEC001'],
+            'Product_Name': ['Madison Sofa', 'Leather Recliner', 'Oak Dining Table', 'Queen Platform Bed', 
+                           'Full Size Bed', 'Accent Chair', 'Dining Chair Set', 'Area Rug 8x10', 
+                           'Runner Rug', 'Wall Art'],
+            'Category': ['Sofas', 'Sofas', 'Tables', 'Beds', 'Beds', 'Chairs', 'Chairs', 'Rugs', 'Rugs', 'Decor'],
+            'Current_Stock': [20, 8, 15, 12, 5, 30, 25, 6, 40, 75],
+            'Sales_Last_30_Days': [35, 22, 8, 18, 15, 12, 20, 8, 1, 5],
+            'Unit_Price': [1299, 1599, 599, 899, 699, 199, 449, 299, 89, 79],
+            'Supplier': ['Supplier_A', 'Supplier_A', 'Supplier_B', 'Supplier_B', 'Supplier_B', 'Supplier_C', 
+                        'Supplier_C', 'Supplier_E', 'Supplier_E', 'Supplier_F'],
+            'Last_Sale_Date': ['2025-12-04', '2025-12-03', '2025-12-01', '2025-12-05', '2025-12-02', 
+                             '2025-11-30', '2025-12-04', '2025-11-25', '2025-08-15', '2025-10-20']
+        })
+        warehouse_south.to_excel(writer, sheet_name='Warehouse_South', index=False)
+        
+        # Sheet 3: Warehouse West
+        warehouse_west = pd.DataFrame({
+            'SKU': ['SOF002', 'TAB003', 'TAB004', 'BED002', 'CHA002', 'CHA004', 'LAM003', 'OUT001', 'OUT002', 'OUT003'],
+            'Product_Name': ['Parker Sectional', 'Console Table', 'Side Table', 'King Storage Bed', 
+                           'Office Chair', 'Bar Stool', 'Desk Lamp', 'Patio Set', 'Outdoor Sofa', 'Fire Pit'],
+            'Category': ['Sofas', 'Tables', 'Tables', 'Beds', 'Chairs', 'Chairs', 'Lighting', 
+                        'Outdoor', 'Outdoor', 'Outdoor'],
+            'Current_Stock': [10, 18, 22, 4, 16, 8, 45, 3, 2, 12],
+            'Sales_Last_30_Days': [12, 6, 5, 28, 14, 25, 8, 18, 22, 4],
+            'Unit_Price': [1899, 399, 199, 1199, 399, 249, 69, 1299, 1499, 599],
+            'Supplier': ['Supplier_A', 'Supplier_B', 'Supplier_C', 'Supplier_B', 'Supplier_C', 'Supplier_C', 
+                        'Supplier_D', 'Supplier_G', 'Supplier_G', 'Supplier_G'],
+            'Last_Sale_Date': ['2025-12-03', '2025-11-28', '2025-11-15', '2025-12-05', '2025-12-04', 
+                             '2025-12-05', '2025-12-01', '2025-12-02', '2025-12-05', '2025-11-20']
+        })
+        warehouse_west.to_excel(writer, sheet_name='Warehouse_West', index=False)
+        
+        # Sheet 4: Sales Summary (different data type)
+        sales_summary = pd.DataFrame({
+            'Month': ['January', 'February', 'March', 'April', 'May', 'June', 
+                     'July', 'August', 'September', 'October', 'November', 'December'],
+            'Total_Sales': [125000, 132000, 145000, 138000, 155000, 162000, 
+                          148000, 151000, 167000, 175000, 182000, 195000],
+            'Total_Units': [450, 475, 520, 490, 550, 580, 525, 535, 595, 625, 650, 695],
+            'Avg_Order_Value': [278, 278, 279, 282, 282, 279, 282, 282, 281, 280, 280, 281],
+            'New_Customers': [85, 92, 105, 98, 112, 125, 108, 115, 128, 135, 142, 155],
+            'Return_Rate': [2.5, 2.3, 2.1, 2.4, 2.2, 2.0, 2.3, 2.1, 1.9, 2.0, 1.8, 1.7]
+        })
+        sales_summary.to_excel(writer, sheet_name='Sales_Summary_2024', index=False)
+    
+    output.seek(0)
+    return output
+
 def smart_rate_limit():
     """Smart rate limiting"""
     current_time = time.time()
@@ -565,6 +640,21 @@ with st.sidebar:
     else:  # Excel Data mode
         st.subheader("📊 Upload Excel File")
         
+        # Sample Excel download button
+        sample_excel = create_sample_excel()
+        st.download_button(
+            label="📥 Download Sample Excel Template",
+            data=sample_excel,
+            file_name="Ashley_Inventory_Sample.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            help="Download a pre-filled sample Excel with 4 sheets to test the app"
+        )
+        
+        st.caption("💡 Download the sample, test it, then replace with your data!")
+        
+        st.divider()
+        
         if st.session_state.clear_uploader:
             st.session_state.clear_uploader = False
             st.session_state.uploader_key += 1
@@ -933,85 +1023,80 @@ else:
         """)
     
     else:  # Excel mode
-        st.info("👈 Upload an Excel file to begin multi-sheet analysis")
+        st.info("👈 Download the sample Excel template to get started!")
         
         st.markdown("""
         ### ✨ Excel Multi-Sheet Analysis Features:
         
-        **📊 Complete Workbook Analysis:**
-        - Analyzes ALL sheets in your Excel file automatically
-        - Each sheet gets its own dedicated AI analysis
-        - Compare data across multiple sheets
-        - Perfect for complex workbooks with multiple data sets
+        **📊 Pre-Built Sample Template:**
+        - Click "Download Sample Excel Template" in the sidebar
+        - Ready-to-use Excel file with 4 sheets:
+          - **Warehouse_North**: 10 products with inventory data
+          - **Warehouse_South**: 10 different products
+          - **Warehouse_West**: 10 outdoor & office items
+          - **Sales_Summary_2024**: Monthly sales metrics
+        - Real furniture data (Sofas, Tables, Beds, Chairs, etc.)
+        - Test the app immediately with sample data!
         
-        **🎯 Three Analysis Types:**
+        **🎯 How to Use Sample Template:**
         
-        **1. General Insights**
-        - Comprehensive overview of each sheet
-        - Identifies data patterns and trends
-        - Highlights key findings
-        - Strategic recommendations
+        **Step 1: Download & Test**
+        1. Click "📥 Download Sample Excel Template" 
+        2. Upload it back to test the app
+        3. See AI analyze all 4 sheets!
         
-        **2. Stockout Risk Analysis**
-        - Identifies products at risk per sheet
-        - Calculates stockout dates
-        - Recommends reorder quantities
-        - Revenue impact assessment
+        **Step 2: Customize for Your Data**
+        1. Open downloaded Excel in Microsoft Excel/Google Sheets
+        2. Replace sample data with YOUR Ashley data
+        3. Keep the same column structure (or adjust columns as needed)
+        4. Save and upload
+        5. Get insights on YOUR actual inventory!
         
-        **3. Slow Movers Detection**
-        - Finds excess inventory per sheet
-        - Clearance recommendations
-        - Cost savings analysis
-        - Turnover optimization
+        **📋 What's in the Sample:**
         
-        ### 📖 How to use:
-        1. Upload your Excel workbook (.xlsx or .xls)
-        2. App automatically detects all sheets
-        3. Choose analysis type
-        4. Select which sheets to analyze (or analyze all)
-        5. Click analyze
-        6. Get separate AI insights for EACH sheet!
-        7. Download individual or combined reports
+        **Sheet 1-3: Warehouse Inventory**
+        - SKU, Product Name, Category
+        - Current Stock levels
+        - Sales in last 30 days
+        - Unit Price, Supplier
+        - Last Sale Date
         
-        ### 📋 Example Use Cases:
-        - **Multi-location inventory**: Each sheet = different warehouse
-        - **Product categories**: Each sheet = different category
-        - **Time periods**: Each sheet = different month/quarter
-        - **Departments**: Each sheet = different department data
-        - **Suppliers**: Each sheet = different vendor data
+        **Sheet 4: Sales Summary**
+        - Monthly data (Jan-Dec 2024)
+        - Total Sales, Units Sold
+        - Average Order Value
+        - New Customers, Return Rate
+        
+        ### 🎯 Three Analysis Types:
+        
+        **1. General Insights** - Best for sales data
+        - Overview of performance
+        - Trends and patterns
+        - Top/bottom performers
+        
+        **2. Stockout Risk** - Best for inventory data
+        - Products running low
+        - Reorder recommendations
+        - Revenue at risk
+        
+        **3. Slow Movers** - Best for inventory data
+        - Overstock items
+        - Clearance suggestions
+        - Cost savings opportunities
         
         ### 💡 Pro Tips:
-        - Name your sheets descriptively (e.g., "Warehouse_East", "Q4_2024")
-        - Keep consistent column names across sheets for better analysis
-        - Each sheet will be analyzed separately with full AI insights
-        - You can compare insights across sheets easily
-        """)
+        - **Test with sample first** to see how it works
+        - **Then replace with your data** keeping similar structure
+        - Each sheet analyzed separately with full AI insights
+        - Perfect for multi-location or multi-category analysis
         
-        # Sample Excel template info
-        with st.expander("📥 Sample Excel Structure", expanded=False):
-            st.markdown("""
-            **Example Multi-Sheet Excel Structure:**
-            
-            **Sheet 1: Warehouse_North**
-            | SKU | Product | Stock | Sales_30d | Category |
-            |-----|---------|-------|-----------|----------|
-            | SOF001 | Sofa A | 50 | 45 | Sofas |
-            | TAB001 | Table B | 30 | 12 | Tables |
-            
-            **Sheet 2: Warehouse_South**
-            | SKU | Product | Stock | Sales_30d | Category |
-            |-----|---------|-------|-----------|----------|
-            | SOF001 | Sofa A | 15 | 60 | Sofas |
-            | BED001 | Bed C | 8 | 20 | Beds |
-            
-            **Sheet 3: Warehouse_West**
-            | SKU | Product | Stock | Sales_30d | Category |
-            |-----|---------|-------|-----------|----------|
-            | CHA001 | Chair D | 100 | 5 | Chairs |
-            | TAB002 | Table E | 25 | 18 | Tables |
-            
-            Each sheet will get its own detailed analysis!
-            """)
+        ### 🚀 Quick Start (3 minutes):
+        1. Click "Download Sample Excel Template" (sidebar)
+        2. Upload it back
+        3. Select "General Insights"
+        4. Click "Analyze"
+        5. See AI magic happen! ✨
+        """)
 
 st.divider()
 st.caption(f"⚡ Shakti-Gemini AI Assistant | Multi-Sheet Excel Analysis | {datetime.now().strftime('%I:%M %p')}")
